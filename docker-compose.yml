@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  finops-mcp:
+    build: .
+    environment:
+      - MCP_TRANSPORT=stdio
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-bdag-playground}
+      - GCP_LOCATION=${GCP_LOCATION:-us-west1}
+      - FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION:-finops_chunks}
+    volumes:
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-~/.config/gcloud/application_default_credentials.json}:/tmp/adc.json:ro
+    env_file:
+      - .env
+    stdin_open: true
+    tty: true
