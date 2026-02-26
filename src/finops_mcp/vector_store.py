@@ -22,8 +22,10 @@ def _get_collection(collection_name: str):
     if _db is None:
         from google.cloud import firestore
 
-        _db = firestore.Client()
-        logger.info("Firestore client initialized")
+        from finops_mcp import config
+
+        _db = firestore.Client(database=config.FIRESTORE_DATABASE)
+        logger.info("Firestore client initialized (database=%s)", config.FIRESTORE_DATABASE)
     if _collection_ref is None or _collection_ref.id != collection_name:
         _collection_ref = _db.collection(collection_name)
     return _collection_ref

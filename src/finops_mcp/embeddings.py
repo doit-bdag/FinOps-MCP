@@ -36,19 +36,22 @@ def get_embeddings(
 ) -> list[list[float]]:
     """Embed a list of texts for document ingestion.
 
-    Uses task_type=RETRIEVAL_DOCUMENT. Batches in chunks of 250
-    (Vertex AI limit per request).
+    Uses task_type=RETRIEVAL_DOCUMENT via TextEmbeddingInput.
+    Batches in chunks of 50 to stay under the 20k token limit per request.
     """
+    from vertexai.language_models import TextEmbeddingInput
+
     model = _get_model(project, location)
     embeddings: list[list[float]] = []
-    batch_size = 250
+    batch_size = 50
 
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
-        results = model.get_embeddings(batch, task_type="RETRIEVAL_DOCUMENT")
+        inputs = [TextEmbeddingInput(text=t, task_type="RETRIEVAL_DOCUMENT") for t in batch]
+        results = model.get_embeddings(inputs)
         embeddings.extend([r.values for r in results])
         logger.info(
-            "Embedded batch %d–%d of %d texts",
+            "Embedded batch %d-%d of %d texts",
             i,
             min(i + batch_size, len(texts)),
             len(texts),
@@ -64,8 +67,11 @@ def get_query_embedding(
 ) -> list[float]:
     """Embed a single query for retrieval.
 
-    Uses task_type=RETRIEVAL_QUERY for better retrieval quality.
+    Uses task_type=RETRIEVAL_QUERY via TextEmbeddingInput.
     """
+    from vertexai.language_models import TextEmbeddingInput
+
     model = _get_model(project, location)
-    results = model.get_embeddings([query], task_type="RETRIEVAL_QUERY")
+    inputs = [TextEmbeddingInput(text=query, task_type="RETRIEVAL_QUERY")]
+    results = model.get_embeddings(inputs)
     return results[0].values

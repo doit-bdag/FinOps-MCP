@@ -17,6 +17,7 @@ GCP_LOCATION: str = os.getenv("GCP_LOCATION", "us-west1")
 
 # ── Firestore ─────────────────────────────────────────────────────────────────
 FIRESTORE_COLLECTION: str = os.getenv("FIRESTORE_COLLECTION", "finops_chunks")
+FIRESTORE_DATABASE: str = os.getenv("FIRESTORE_DATABASE", "finops-mcp")
 
 # ── Transport ─────────────────────────────────────────────────────────────────
 MCP_TRANSPORT: str = os.getenv("MCP_TRANSPORT", "stdio")
