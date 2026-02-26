@@ -48,7 +48,24 @@ def get_embeddings(
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
         inputs = [TextEmbeddingInput(text=t, task_type="RETRIEVAL_DOCUMENT") for t in batch]
-        results = model.get_embeddings(inputs)
+        
+        # Add retry logic for 429 Quota errors
+        max_retries = 5
+        base_delay = 5
+        for attempt in range(max_retries):
+            try:
+                results = model.get_embeddings(inputs)
+                break
+            except Exception as e:
+                # If it's a 429 or other retryable error
+                if "429" in str(e) and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Vertex AI rate limit hit (429). Retrying in {delay}s... (Attempt {attempt+1}/{max_retries})")
+                    import time
+                    time.sleep(delay)
+                else:
+                    raise
+                    
         embeddings.extend([r.values for r in results])
         logger.info(
             "Embedded batch %d-%d of %d texts",
