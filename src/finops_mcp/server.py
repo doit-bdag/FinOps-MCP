@@ -55,15 +55,17 @@ def search_finops_docs(
     top_k: int = 5,
     source_filter: str | None = None,
 ) -> list[dict]:
-    """Search FinOps Foundation documentation with a natural language query.
+    """Use this tool to find documentation about FinOps concepts, frameworks, and practices.
+
+    This tool returns chunks of text, titles, and URLs for matching documents.
+    If the returned chunks are not detailed enough to answer the user's question, 
+    use `get_finops_page` or `batch_get_finops_pages` with the `url` from this 
+    tool's output to retrieve the full document content.
 
     Args:
-        query: Natural language question about FinOps concepts, frameworks, etc.
-        top_k: Number of results to return (1–20, default 5).
-        source_filter: Optional URL prefix filter, e.g. "/framework/" to scope results.
-
-    Returns:
-        List of matching chunks with text, url, title, section_header, similarity_score.
+        query: Required. The raw query string, such as "What is cloud sustainability?"
+        top_k: Number of results to return (1-20, default 5).
+        source_filter: Optional URL prefix filter to scope results.
     """
     from finops_mcp.embeddings import get_query_embedding
     from finops_mcp.vector_store import search
@@ -120,13 +122,13 @@ def list_finops_sources() -> list[dict]:
 
 @mcp.tool
 def get_finops_page(url: str) -> dict:
-    """Get the full text of a specific FinOps documentation page.
+    """Use this tool to retrieve the full content of a single document.
+    The document url should be obtained from the `url` field of results from a
+    call to the `search_finops_docs` tool. If you need to retrieve multiple
+    documents, use `batch_get_finops_pages` instead.
 
     Args:
-        url: The exact URL of the page to retrieve.
-
-    Returns:
-        {url, title, full_text, chunk_count, crawled_at} or error message.
+        url: Required. The exact URL of the page to retrieve.
     """
     from finops_mcp.vector_store import get_page
 
@@ -137,6 +139,30 @@ def get_finops_page(url: str) -> dict:
     if result.get("crawled_at"):
         result["crawled_at"] = str(result["crawled_at"])
     return result
+
+
+@mcp.tool
+def batch_get_finops_pages(urls: list[str]) -> list[dict]:
+    """Use this tool to retrieve the full content of up to 20 documents in a
+    single call. The document urls should be obtained from the `url` field
+    of results from a call to the `search_finops_docs` tool. Use this tool
+    instead of calling `get_finops_page` multiple times to fetch multiple documents.
+
+    Args:
+        urls: Required. The list of exact URLs of the pages to retrieve. A maximum of 20 documents can be retrieved.
+    """
+    from finops_mcp.vector_store import get_page
+
+    results = []
+    for url in urls[:20]:
+        page = get_page(url, config.FIRESTORE_COLLECTION)
+        if page:
+            if page.get("crawled_at"):
+                page["crawled_at"] = str(page["crawled_at"])
+            results.append(page)
+        else:
+            results.append({"error": f"Page not found: {url}"})
+    return results
 
 
 @mcp.tool
