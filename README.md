@@ -116,30 +116,37 @@ Then configure your specific client:
 
 ### Option 2: Remote Cloud Run Endpoint (SSE)
 
-The Cloud Run service is locked down via IAM exclusively to `domain:doit.com` users. You cannot access it publically without an identity token.
+The Cloud Run service is locked down via IAM exclusively to `domain:doit.com` users. You cannot access it publically without a valid identity token.
 
-If your client natively supports HTTP/SSE connections with custom headers, you can connect directly:
+To easily bypass complex header injection in your IDE (which many don't natively support), use the `gcloud run services proxy` command. This creates a secure local bridge that automatically attaches your `@doit.com` identity token to all outbound requests.
 
-* **URL**: `https://finops-mcp-950260270173.us-west1.run.app/mcp`
-* **Auth Header**: `"Authorization": "Bearer $(gcloud auth print-identity-token)"`
-
-**For Claude Desktop (SSE Proxy Method)**:
-Claude Desktop supports SSE but requires a proxy to handle the authentication dynamically.
-
-1. Start the gcloud proxy (which automatically attaches your identity token):
+1. **Start the secure proxy (leave this running in a terminal):**
 
    ```bash
    gcloud run services proxy finops-mcp --region us-west1 --project bdag-playground --port 3000
    ```
 
-2. Configure Claude Desktop (`claude_desktop_config.json`) to communicate with the proxy:
+2. **Configure your client:**
 
-   ```json
-   {
-     "mcpServers": {
-       "finops-cloud": {
-         "url": "http://localhost:3000/mcp"
+   * **Claude Desktop**:
+     Update `claude_desktop_config.json`:
+
+     ```json
+     {
+       "mcpServers": {
+         "finops-cloud": {
+           "url": "http://localhost:3000/mcp"
+         }
        }
      }
-   }
-   ```
+     ```
+
+   * **Cursor**:
+     * Open Cursor Settings > Features > MCP Servers
+     * Click **+ Add New**
+     * Type: `sse`
+     * Name: `finops-cloud`
+     * URL: `http://localhost:3000/mcp`
+
+   * **Antigravity**:
+     * Update your `.agent/` configuration or launch command to specify the SSE transport with the proxy URL: `http://localhost:3000/mcp`.
