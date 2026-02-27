@@ -104,8 +104,16 @@ def search(
     return results[:top_k]
 
 
-def list_sources(collection_name: str) -> list[dict[str, Any]]:
-    """List all unique source URLs with chunk counts and crawl timestamps."""
+def list_sources(
+    collection_name: str,
+    limit: int = 20,
+    offset: int = 0
+) -> dict[str, Any]:
+    """List unique source URLs with pagination.
+    
+    Returns a dictionary conforming to standard pagination metadata:
+    total, count, offset, items, has_more, next_offset.
+    """
     collection = _get_collection(collection_name)
 
     # Fetch all docs (url, title, crawled_at) — no embedding to save bandwidth
@@ -124,7 +132,18 @@ def list_sources(collection_name: str) -> list[dict[str, Any]]:
             }
         sources[url]["chunk_count"] += 1
 
-    return list(sources.values())
+    distinct_sources = sorted(sources.values(), key=lambda x: x["url"])
+    total = len(distinct_sources)
+    sliced = distinct_sources[offset : offset + limit]
+    
+    return {
+        "total": total,
+        "count": len(sliced),
+        "offset": offset,
+        "items": sliced,
+        "has_more": total > (offset + limit),
+        "next_offset": offset + limit if total > (offset + limit) else None
+    }
 
 
 def get_page(url: str, collection_name: str) -> dict[str, Any] | None:

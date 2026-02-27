@@ -110,11 +110,11 @@ def test_get_embeddings_batches():
 # ── Server tests ──────────────────────────────────────────────────────────────
 
 def test_server_has_tools():
-    """The FastMCP server instance has all 4 expected tools registered."""
+    """The FastMCP server instance has all 5 expected tools registered."""
     from finops_mcp.server import mcp
 
     # FastMCP stores tools internally — just verify the server was created
-    assert mcp.name == "finops-docs"
+    assert mcp.name == "finops_mcp"
 
 
 # ── Crawler helper tests ─────────────────────────────────────────────────────

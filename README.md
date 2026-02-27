@@ -45,12 +45,13 @@ python scripts/ingest.py --url https://www.finops.org/framework/
 
 ## MCP Tools
 
-| Tool                  | Description                                 |
-| --------------------- | ------------------------------------------- |
-| `search_finops_docs`  | Semantic search across FinOps documentation |
-| `list_finops_sources` | List all crawled URLs with metadata         |
-| `get_finops_page`     | Get full text of a specific page            |
-| `trigger_crawl`       | Crawl and index a URL on demand             |
+| Tool                     | Description                                 |
+| ------------------------ | ------------------------------------------- |
+| `finops_search_docs`     | Semantic search across FinOps documentation |
+| `finops_list_sources`    | List all crawled URLs with metadata         |
+| `finops_get_page`        | Get full text of a specific page            |
+| `finops_batch_get_pages` | Get full text of multiple pages at once     |
+| `finops_trigger_crawl`   | Crawl and index a URL on demand             |
 
 ## Deploy to Cloud Run
 
