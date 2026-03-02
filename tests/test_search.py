@@ -150,6 +150,44 @@ def test_vibe_coder_tools_registered():
     assert callable(finops_generate_ide_rules)
 
 
+def test_server_instructions_mention_agent_reasoning():
+    """Verify that the MCP server instructions use direct agent commands."""
+    from finops_mcp.server import mcp
+
+    instructions = mcp.instructions.lower()
+    
+    # Must contain declarative commands to the agent
+    assert "use this server before" in instructions or "always consult this server when" in instructions
+    assert "cost" in instructions
+    assert "focus" in instructions
+
+
+def test_tool_descriptions_mention_when_to_use():
+    """Verify that tools have been rewritten to explain *when* an agent should use them."""
+    
+    # Since we're just checking docstrings, we can inspect the functions directly
+    from finops_mcp.server import (
+        finops_search_docs,
+        finops_get_focus_column,
+        finops_normalize_term,
+        finops_check_focus_compliance,
+        finops_generate_ide_rules
+    )
+
+    tools = [
+        finops_search_docs,
+        finops_get_focus_column,
+        finops_normalize_term,
+        finops_check_focus_compliance,
+        finops_generate_ide_rules
+    ]
+
+    for tool_fn in tools:
+        doc = tool_fn.__doc__.lower()
+        # All tools should have agent-reasoning hooks like "use this" or "call this"
+        assert "use this" in doc or "call this" in doc, f"{tool_fn.__name__} missing agent reasoning hook"
+
+
 @patch("finops_mcp.vector_store.list_structured_docs")
 def test_check_focus_compliance(mock_list_docs):
     """Test finops_check_focus_compliance identifies missing and non-standard columns."""
