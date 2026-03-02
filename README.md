@@ -1,8 +1,8 @@
-# FinOps Foundation Docs MCP Server
+# Unofficial FinOps Foundation Docs MCP Server
 
 ## Purpose
 
-A production-ready [MCP](https://modelcontextprotocol.io/) server that seamlessly integrates the [FinOps Foundation](https://www.finops.org/) documentation directly into your AI assistant or IDE (Claude Desktop, Cursor, Antigravity, etc.).
+A production-ready [MCP](https://modelcontextprotocol.io/) server that seamlessly integrates the [FinOps Foundation](https://www.finops.org/) documentation directly into your AI assistant or IDE (Claude Desktop, Cursor, Antigravity, etc.). 
 
 It acts as a knowledge layer connecting your agent to Google Cloud Firestore Vector Search and Vertex AI Embeddings, ensuring high-quality, up-to-date FinOps context.
 
@@ -99,3 +99,21 @@ If you are developing or prefer to run the server entirely from your own machine
      }
    }
    ```
+## Disclaimer
+
+This project is an independent, community-built tool and is not affiliated with,
+endorsed by, sponsored by, or officially connected to the FinOps Foundation or
+the Linux Foundation in any way.
+
+All FinOps® terminology, framework definitions, capability descriptions, domain
+structures, maturity model content, and FOCUS™ specification materials referenced
+or indexed by this tool are the intellectual property of the FinOps Foundation,
+a project of the Linux Foundation. This tool accesses publicly available
+documentation from finops.org solely to assist developers in understanding and
+applying FinOps standards — it does not claim ownership of, nor does it
+redistribute, that content.
+
+FinOps® and FOCUS™ are trademarks of the Linux Foundation.
+
+For authoritative FinOps standards, certification, and official guidance, please
+visit [finops.org](https://www.finops.org).
