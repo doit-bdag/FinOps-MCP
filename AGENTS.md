@@ -7,6 +7,7 @@ FinOps best practices, FOCUS spec standards, and canonical terminology.
 ## When to Use This Server
 
 Call this server's tools **before** writing any code that involves:
+
 - Cloud cost data, billing schemas, or pricing models
 - Cost allocation, chargeback, or showback logic
 - Anomaly detection on cloud spend

@@ -703,13 +703,16 @@ if __name__ == "__main__":
         mcp.run(
             transport="streamable-http",
             host="0.0.0.0",
-            port=config.PORT
+            port=config.PORT,
+            stateless_http=True,
+            show_banner=False
         )
     elif config.MCP_TRANSPORT == "sse":
         mcp.run(
             transport="sse",
             host="0.0.0.0",
-            port=config.PORT
+            port=config.PORT,
+            show_banner=False
         )
     else:
-        mcp.run(transport="stdio")
+        mcp.run(transport="stdio", show_banner=False)
