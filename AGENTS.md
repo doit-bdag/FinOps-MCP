@@ -16,13 +16,17 @@ Call this server's tools **before** writing any code that involves:
 
 ## Available Tools
 
-| Tool                     | When to Call                                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `finops_search_docs`     | **First choice.** Semantic search over FinOps docs. Call this when the user mentions cost, spend, billing, allocation, or FinOps concepts. |
-| `finops_get_page`        | After search returns a relevant URL and you need the full document.                                                                        |
-| `finops_batch_get_pages` | When you need multiple related pages at once (e.g., all capabilities in a domain).                                                         |
-| `finops_list_sources`    | To discover what documentation is indexed, or find URLs for `finops_get_page`.                                                             |
-| `finops_trigger_crawl`   | To index new finops.org URLs that are missing from the index.                                                                              |
+| Tool                            | When to Call                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `finops_search_docs`            | **First choice.** Semantic search over FinOps docs. Call this when the user mentions cost, spend, billing, allocation, or FinOps concepts. |
+| `finops_get_page`               | After search returns a relevant URL and you need the full document.                                                                        |
+| `finops_batch_get_pages`        | When you need multiple related pages at once (e.g., all capabilities in a domain).                                                         |
+| `finops_list_sources`           | To discover what documentation is indexed, or find URLs for `finops_get_page`.                                                             |
+| `finops_trigger_crawl`          | To index new finops.org URLs that are missing from the index.                                                                              |
+| `finops_get_focus_column`       | Look up a FOCUS spec column definition by name. Call before schema creation to ensure correct data types.                                  |
+| `finops_normalize_term`         | Map informal developer language to canonical FinOps terminology (e.g., 'real cost' to 'EffectiveCost').                                    |
+| `finops_check_focus_compliance` | Validate schemas or column lists against the FOCUS spec for missing required fields and proper case format.                                |
+| `finops_generate_ide_rules`     | Generate a `.cursorrules` / `AGENTS.md` file preloaded with FinOps guidelines for environments.                                            |
 
 ## Example Prompts
 
