@@ -9,7 +9,7 @@ steps:
       - --platform=managed
       - --service-account=finops-mcp-sa@$PROJECT_ID.iam.gserviceaccount.com
       - --allow-unauthenticated
-      - --set-env-vars=MCP_TRANSPORT=streamable-http,GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=us-west1,FIRESTORE_COLLECTION=finops_chunks
+      - --set-env-vars=MCP_TRANSPORT=sse,GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=us-west1,FIRESTORE_COLLECTION=finops_chunks
       - --memory=1Gi
       - --cpu=1
       - --min-instances=0
