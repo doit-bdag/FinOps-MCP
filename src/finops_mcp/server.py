@@ -705,5 +705,11 @@ if __name__ == "__main__":
             host="0.0.0.0",
             port=config.PORT
         )
+    elif config.MCP_TRANSPORT == "sse":
+        mcp.run(
+            transport="sse",
+            host="0.0.0.0",
+            port=config.PORT
+        )
     else:
         mcp.run(transport="stdio")
