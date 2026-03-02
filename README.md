@@ -101,7 +101,19 @@ Then configure your specific client:
   * Command: `uv run --project /absolute/path/to/FinOps-MCP python -m finops_mcp.server`
 
 * **Antigravity**:
-  * Configure your `.agent/` settings or pass the tool at launch specifying transport `stdio` and the exact same python run command: `uv run python -m finops_mcp.server`.
+  * Add this to your global `~/.gemini/antigravity/mcp_config.json`:
+
+  ```json
+  "finops_mcp": {
+    "command": "uv",
+    "args": ["run", "--project", "/absolute/path/to/FinOps-MCP", "python", "-m", "finops_mcp.server"],
+    "env": {
+      "MCP_TRANSPORT": "stdio"
+    }
+  }
+  ```
+
+  *(Note: Setting `MCP_TRANSPORT: stdio` guarantees it won't conflict with a `.env` file that specifies streamable-http.)*
 
 * **Kiro**:
   * Add this to Kiro's MCP configuration JSON:
