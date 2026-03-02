@@ -1,49 +1,14 @@
 # FinOps Foundation Docs MCP Server
 
-A production-ready [MCP](https://modelcontextprotocol.io/) server that crawls, indexes, and exposes the [FinOps Foundation](https://www.finops.org/) documentation as queryable tools for LLM clients (Claude Desktop, Cursor, etc.).
+## Purpose
 
-**100% Google Cloud** — Cloud Run + Firestore Vector Search + Vertex AI Embeddings.
+A production-ready [MCP](https://modelcontextprotocol.io/) server that seamlessly integrates the [FinOps Foundation](https://www.finops.org/) documentation directly into your AI assistant or IDE (Claude Desktop, Cursor, Antigravity, etc.).
 
-## Architecture
+It acts as a knowledge layer connecting your agent to Google Cloud Firestore Vector Search and Vertex AI Embeddings, ensuring high-quality, up-to-date FinOps context.
 
-```text
-MCP Client  ──►  Cloud Run (MCP Server)  ──►  Firestore (Vector Store)
-                        │
-                        ▼
-                 Vertex AI (Embeddings)
-```
+## Function (Features)
 
-## Quick Start (Local)
-
-```bash
-# 1. Authenticate
-gcloud auth application-default login
-
-# 2. Copy env vars
-cp .env.example .env
-
-# 3. Install
-pip install uv
-uv pip install -e .
-
-# 4. Run in stdio mode
-python -m finops_mcp.server
-```
-
-## Ingestion
-
-```bash
-# Ingest all seed URLs
-python scripts/ingest.py
-
-# Re-ingest everything
-python scripts/ingest.py --refresh
-
-# Ingest a single URL
-python scripts/ingest.py --url https://www.finops.org/framework/
-```
-
-## MCP Tools
+The server exposes the following tools directly to your AI agent so it can read and navigate the FinOps framework autonomously:
 
 | Tool                     | Description                                 |
 | ------------------------ | ------------------------------------------- |
@@ -53,113 +18,84 @@ python scripts/ingest.py --url https://www.finops.org/framework/
 | `finops_batch_get_pages` | Get full text of multiple pages at once     |
 | `finops_trigger_crawl`   | Crawl and index a URL on demand             |
 
-## Deploy to Cloud Run
+## Setup Instructions
 
-```bash
-gcloud run deploy finops-mcp \
-  --source . \
-  --region us-west1 \
-  --project bdag-playground \
-  --service-account finops-mcp-sa@bdag-playground.iam.gserviceaccount.com \
-  --no-allow-unauthenticated \
-  --set-env-vars MCP_TRANSPORT=streamable-http,GCP_PROJECT_ID=bdag-playground,GCP_LOCATION=us-west1,FIRESTORE_COLLECTION=finops_chunks \
-  --memory 1Gi --cpu 1 --min-instances 0 --max-instances 5 --timeout 300
-```
+### 🌐 Option 1: Connect to the Public Cloud Run Server (Recommended)
 
-## Connecting your MCP Client
+You can directly connect to the hosted `https://mcp.aquaticrabbit.tech/sse` endpoint. Because many IDEs don't natively translate SSE gracefully into JSON-RPC, the easiest and most robust method is to use the official Node `mcp-remote` proxy.
 
-The FinOps MCP Server operates securely. There are two ways to connect your agent/IDE, depending on what transport it supports.
+**Prerequisites:** You must have `Node.js` installed.
 
-### Option 1: Local Stdio Mode (Recommended)
-
-This is the **most robust method** and natively supports **Claude Code, Cursor, Antigravity, and Kiro**.
-The server runs locally on your machine but communicates with the centralized Cloud Firestore database and Vertex AI models using your Google Cloud credentials. This guarantees all team members share the same synchronized index.
-
-First, ensure you are authenticated with your `@doit.com` account and your environment is set up:
-
-```bash
-gcloud auth application-default login
-
-# Ensure uv is installed and the project is set up
-pip install uv
-uv pip install -e .
-```
-
-Then configure your specific client:
-
-* **Claude Code**:
-
-  ```bash
-  claude mcp add finops-mcp uv -- run --project /absolute/path/to/FinOps-MCP python -m finops_mcp.server
-  ```
-
-* **Cursor**:
-  * Open Cursor Settings > Features > MCP Servers
-  * Click **+ Add New**
-  * Type: `stdio`
-  * Name: `finops-mcp`
-  * Command: `uv run --project /absolute/path/to/FinOps-MCP python -m finops_mcp.server`
-
-* **Antigravity**:
-  * Add this to your global `~/.gemini/antigravity/mcp_config.json`:
+* **Claude Desktop**
+  Add the following to your `claude_desktop_config.json`:
 
   ```json
-  "finops_mcp": {
-    "command": "npx",
-    "args": [
-      "-y",
-      "mcp-remote",
-      "https://mcp.aquaticrabbit.tech/sse"
-    ],
-    "env": {}
-  }
-  ```
-
-* **Kiro**:
-  * Add this to Kiro's MCP configuration JSON:
-
-  ```json
-  "mcpServers": {
-    "finops-mcp": {
-      "command": "uv",
-      "args": ["run", "--project", "/absolute/path/to/FinOps-MCP", "python", "-m", "finops_mcp.server"]
+  {
+    "mcpServers": {
+      "finops_mcp": {
+        "command": "npx",
+        "args": ["-y", "mcp-remote", "https://mcp.aquaticrabbit.tech/sse"]
+      }
     }
   }
   ```
 
-### Option 2: Remote Cloud Run Endpoint (SSE)
+* **Cursor**
+  * Open **Cursor Settings > Features > MCP Servers**
+  * Click **+ Add New**
+  * Type: `command`
+  * Name: `finops_mcp`
+  * Command: `npx -y mcp-remote https://mcp.aquaticrabbit.tech/sse`
 
-The Cloud Run service is locked down via IAM exclusively to `domain:doit.com` users. You cannot access it publically without a valid identity token.
+* **Antigravity**
+  Add the following to your `~/.gemini/antigravity/mcp_config.json`:
 
-To easily bypass complex header injection in your IDE (which many don't natively support), use the `gcloud run services proxy` command. This creates a secure local bridge that automatically attaches your `@doit.com` identity token to all outbound requests.
+  ```json
+  {
+    "mcpServers": {
+      "finops_mcp": {
+        "command": "npx",
+        "args": ["-y", "mcp-remote", "https://mcp.aquaticrabbit.tech/sse"]
+      }
+    }
+  }
+  ```
 
-1. **Start the secure proxy (leave this running in a terminal):**
+---
+
+### 💻 Option 2: Run the Server Locally
+
+If you are developing or prefer to run the server entirely from your own machine, you can run the python server locally in `stdio` mode.
+
+1. **Install uv**
 
    ```bash
-   gcloud run services proxy finops-mcp --region us-west1 --project bdag-playground --port 3000
+   pip install uv
    ```
 
-2. **Configure your client:**
+2. **Download the project**
 
-   * **Claude Desktop**:
-     Update `claude_desktop_config.json`:
+   ```bash
+   git clone https://github.com/doit-bdag/FinOps-MCP.git
+   cd FinOps-MCP
+   uv pip install -e .
+   ```
 
-     ```json
-     {
-       "mcpServers": {
-         "finops-cloud": {
-           "url": "http://localhost:3000/mcp"
-         }
-       }
+3. **Authenticate your Google Cloud Session** (Required for Firestore + Vertex AI access)
+
+   ```bash
+   gcloud auth application-default login
+   ```
+
+4. **Configure your IDE**
+   Add the native local execution command to your MCP client config (e.g., Cursor, Claude Desktop, Antigravity):
+
+   ```json
+   {
+     "command": "uv",
+     "args": ["run", "--project", "/absolute/path/to/FinOps-MCP", "python", "-m", "finops_mcp.server"],
+     "env": {
+       "MCP_TRANSPORT": "stdio"
      }
-     ```
-
-   * **Cursor**:
-     * Open Cursor Settings > Features > MCP Servers
-     * Click **+ Add New**
-     * Type: `sse`
-     * Name: `finops-cloud`
-     * URL: `http://localhost:3000/mcp`
-
-   * **Antigravity**:
-     * Update your `.agent/` configuration or launch command to specify the SSE transport with the proxy URL: `http://localhost:3000/mcp`.
+   }
+   ```
