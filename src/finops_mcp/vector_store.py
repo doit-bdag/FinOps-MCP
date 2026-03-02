@@ -199,3 +199,82 @@ def collection_is_empty(collection_name: str) -> bool:
     collection = _get_collection(collection_name)
     docs = collection.limit(1).stream()
     return not any(True for _ in docs)
+
+
+# ── Structured document helpers (non-vector) ─────────────────────────────────
+
+
+def upsert_structured_doc(
+    doc: dict[str, Any], collection_name: str, doc_id: str
+) -> str:
+    """Upsert a structured document (no embedding vector) by explicit ID."""
+    from datetime import datetime, timezone
+
+    collection = _get_collection(collection_name)
+    doc["updated_at"] = datetime.now(timezone.utc)
+    collection.document(doc_id).set(doc)
+    return doc_id
+
+
+def get_structured_doc(doc_id: str, collection_name: str) -> dict[str, Any] | None:
+    """Get a structured document by its ID."""
+    collection = _get_collection(collection_name)
+    doc = collection.document(doc_id).get()
+    if doc.exists:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        return data
+    return None
+
+
+def search_structured(
+    field: str, value: str, collection_name: str
+) -> list[dict[str, Any]]:
+    """Exact match query on a field in a structured collection."""
+    collection = _get_collection(collection_name)
+    docs = collection.where(field, "==", value).stream()
+    results = []
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        results.append(data)
+    return results
+
+
+def list_structured_docs(
+    collection_name: str, limit: int = 100
+) -> list[dict[str, Any]]:
+    """List all documents in a structured collection."""
+    collection = _get_collection(collection_name)
+    docs = collection.limit(limit).stream()
+    results = []
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        results.append(data)
+    return results
+
+
+def fuzzy_search_structured(
+    field: str, query: str, collection_name: str
+) -> list[dict[str, Any]]:
+    """Case-insensitive search using a lowercase_name field convention.
+
+    Documents should store a ``lowercase_<field>`` field for fuzzy matching.
+    This performs a Firestore range query that acts as a prefix search.
+    """
+    collection = _get_collection(collection_name)
+    lower_field = f"lowercase_{field}"
+    lower_query = query.lower().strip()
+
+    docs = (
+        collection.where(lower_field, ">=", lower_query)
+        .where(lower_field, "<=", lower_query + "\uf8ff")
+        .stream()
+    )
+    results = []
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        results.append(data)
+    return results

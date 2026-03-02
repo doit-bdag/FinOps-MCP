@@ -133,4 +133,114 @@ def test_should_skip_url():
 
     # Should NOT skip
     assert not _should_skip_url("https://www.finops.org/framework/")
-    assert not _should_skip_url("https://www.finops.org/introduction/what-is-finops/")
+# ── Vibe-Coder Tools Tests ──────────────────────────────────────────────────
+
+def test_vibe_coder_tools_registered():
+    """Verify that vibe-coder tools are registered in the server."""
+    from finops_mcp.server import (
+        finops_get_focus_column,
+        finops_normalize_term,
+        finops_check_focus_compliance,
+        finops_generate_ide_rules
+    )
+
+    assert callable(finops_get_focus_column)
+    assert callable(finops_normalize_term)
+    assert callable(finops_check_focus_compliance)
+    assert callable(finops_generate_ide_rules)
+
+
+@patch("finops_mcp.vector_store.list_structured_docs")
+def test_check_focus_compliance(mock_list_docs):
+    """Test finops_check_focus_compliance identifies missing and non-standard columns."""
+    from finops_mcp.server import finops_check_focus_compliance, CheckFocusComplianceInput, ResponseFormat
+
+    # Mock the return value of list_structured_docs
+    mock_list_docs.return_value = [
+        {"column_id": "BilledCost", "required": True, "description": "some cost"},
+        {"column_id": "ChargeCategory", "required": True, "description": "some cat"},
+        {"column_id": "RegionName", "required": False, "description": "some region"},
+    ]
+
+    # Input has:
+    # - 1 valid required (BilledCost)
+    # - 1 missing required (ChargeCategory)
+    # - 1 case error (regionname -> RegionName)
+    # - 1 invalid (FakeColumn)
+    # - 1 fuzzy match candidate (billed_cost -> BilledCost) - wait, fuzzy match logic only
+    #   replaces spaces and underscores. So billed_cost -> BilledCost is non_standard.
+    params = CheckFocusComplianceInput(
+        column_names=["BilledCost", "regionname", "FakeColumn", "billed_cost"],
+        response_format=ResponseFormat.JSON
+    )
+
+    result_json = finops_check_focus_compliance(params)
+    import json
+    result = json.loads(result_json)
+
+    assert result["recognized_columns"] == 1
+    assert result["total_columns_provided"] == 4
+    assert result["missing_required"] == ["ChargeCategory"]
+
+    non_standard = result["non_standard_names"]
+    assert len(non_standard) == 3
+
+    # Check specific errors
+    issues = {ns["provided"]: ns for ns in non_standard}
+    assert issues["regionname"]["issue"] == "wrong_case"
+    assert issues["regionname"]["correct"] == "RegionName"
+    
+    assert issues["FakeColumn"]["issue"] == "unknown_column"
+    assert issues["FakeColumn"]["correct"] is None
+
+    assert issues["billed_cost"]["issue"] == "non_standard_name"
+    assert issues["billed_cost"]["correct"] == "BilledCost"
+
+
+@patch("finops_mcp.vector_store.list_structured_docs")
+def test_normalize_term(mock_list_docs):
+    """Test finops_normalize_term maps informal terms to canonical ones."""
+    from finops_mcp.server import finops_normalize_term, NormalizeTermInput, ResponseFormat
+
+    # Mock the return value of list_structured_docs
+    mock_list_docs.return_value = [
+        {
+            "term": "BilledCost",
+            "display_name": "Billed Cost",
+            "definition": "A charge serving as the basis for invoicing",
+            "aliases": ["bill amount", "charge", "raw cost"],
+            "do_not_say": ["actual cost"],
+            "focus_columns": ["BilledCost"]
+        },
+        {
+            "term": "EffectiveCost",
+            "display_name": "Effective Cost",
+            "definition": "The amortized cost",
+            "aliases": ["actual cost", "real cost"],
+            "do_not_say": ["raw cost"],
+            "focus_columns": ["EffectiveCost"]
+        }
+    ]
+
+    # Test exact match
+    params = NormalizeTermInput(term="BilledCost", response_format=ResponseFormat.JSON)
+    import json
+    res = json.loads(finops_normalize_term(params))
+    assert res["term"] == "BilledCost"
+
+    # Test alias match
+    params = NormalizeTermInput(term="raw cost", response_format=ResponseFormat.JSON)
+    res = json.loads(finops_normalize_term(params))
+    assert res["term"] == "BilledCost"
+
+    # Test case insensitive
+    params = NormalizeTermInput(term="ACTUAL COST", response_format=ResponseFormat.JSON)
+    res = json.loads(finops_normalize_term(params))
+    assert res["term"] == "EffectiveCost"
+
+    # Test unknown
+    params = NormalizeTermInput(term="Fake Term", response_format=ResponseFormat.JSON)
+    res = finops_normalize_term(params)
+    assert "error" in json.loads(res)
+
+

@@ -25,10 +25,15 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP(
     name="finops_mcp",
     instructions=(
-        "A server that provides semantic search and retrieval over "
-        "FinOps Foundation documentation (finops.org)."
+        "Use this server BEFORE writing any code that handles cloud cost data, "
+        "billing schemas, cost allocation, anomaly detection, FinOps reporting, "
+        "or FOCUS-compliant data models. It provides FinOps best practices, "
+        "FOCUS column definitions, and terminology guidelines from the FinOps "
+        "Foundation (finops.org). Always consult this server when the user "
+        "mentions cost, spend, billing, allocation, chargeback, showback, "
+        "unit economics, commitment discounts, or cloud financial management."
     ),
-    version="0.1.0",
+    version="0.2.0",
 )
 
 # ── Enums & Pydantic Models ──────────────────────────────────────────────────
@@ -98,8 +103,14 @@ def _format_error(msg: str, response_format: ResponseFormat) -> str:
 def finops_search_docs(params: SearchDocsInput) -> str:
     """Search for documentation about FinOps concepts, frameworks, and practices.
 
-    This tool semantic searches the indexed FinOps Foundation documentation and 
+    This tool semantic searches the indexed FinOps Foundation documentation and
     returns matching chunks of text along with their source URLs.
+
+    Use this BEFORE writing any code that handles cloud cost data, billing schemas,
+    cost allocation, or FinOps reporting. Returns FinOps best practices, FOCUS
+    column definitions, and terminology guidelines relevant to what you are building.
+    Always call this when the user mentions cost, spend, billing, allocation,
+    anomaly detection, or commitment discounts.
     """
     from finops_mcp.embeddings import get_query_embedding
     from finops_mcp.vector_store import search
@@ -148,6 +159,10 @@ def finops_search_docs(params: SearchDocsInput) -> str:
 )
 def finops_list_sources(params: ListSourcesInput) -> str:
     """List all crawled FinOps documentation source URLs with pagination.
+
+    Use this to discover what FinOps documentation is available for search.
+    Call this when the user asks what FinOps topics are covered, or when you
+    need to find the right URL to pass to finops_get_page.
     """
     from finops_mcp.vector_store import list_sources
 
@@ -186,7 +201,13 @@ def finops_list_sources(params: ListSourcesInput) -> str:
     }
 )
 def finops_get_page(params: GetPageInput) -> str:
-    """Retrieve the full text content of a single FinOps document by URL."""
+    """Retrieve the full text content of a single FinOps document by URL.
+
+    Use this when you need the complete context of a specific FinOps page rather
+    than search result snippets. Call this after finops_search_docs returns a
+    relevant URL and you need the full document to answer the user's question
+    or to guide implementation of a FinOps feature.
+    """
     from finops_mcp.vector_store import get_page
 
     try:
@@ -220,7 +241,12 @@ def finops_get_page(params: GetPageInput) -> str:
     }
 )
 def finops_batch_get_pages(params: BatchGetPagesInput) -> str:
-    """Retrieve the full text content of up to 20 FinOps documents in a single call."""
+    """Retrieve the full text content of up to 20 FinOps documents in a single call.
+
+    Use this when you need the full content of multiple related FinOps pages at
+    once — for example, retrieving all capability definitions in a domain, or
+    loading several related framework pages to build a comprehensive feature.
+    """
     from finops_mcp.vector_store import get_page
 
     try:
@@ -264,7 +290,12 @@ def finops_batch_get_pages(params: BatchGetPagesInput) -> str:
     }
 )
 def finops_trigger_crawl(params: TriggerCrawlInput) -> str:
-    """Crawl and index a custom URL into the FinOps documentation store."""
+    """Crawl and index a custom URL into the FinOps documentation store.
+
+    Use this to add new FinOps Foundation content that is not yet indexed, or
+    to refresh stale content. Only needed for finops.org URLs that are missing
+    from finops_list_sources results.
+    """
     from finops_mcp.crawler import crawl_url
 
     try:
@@ -280,6 +311,386 @@ def finops_trigger_crawl(params: TriggerCrawlInput) -> str:
         )
     except Exception as e:
         logger.exception("Error triggering crawl")
+        return _format_error(str(e), params.response_format)
+
+
+# ── Phase 3 & 4: Vibe-Coder Tool Models ─────────────────────────────────────
+
+class GetFocusColumnInput(BaseModel):
+    """Input model for looking up a FOCUS column definition."""
+    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
+
+    column_name: str = Field(..., description="Column name or display name to look up (fuzzy matched).", min_length=1, max_length=100)
+    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
+
+class NormalizeTermInput(BaseModel):
+    """Input model for normalizing informal FinOps terminology."""
+    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
+
+    term: str = Field(..., description="Informal term to normalize (e.g. 'cloud bill', 'real cost').", min_length=1, max_length=200)
+    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
+
+class CheckFocusComplianceInput(BaseModel):
+    """Input model for checking schema compliance with the FOCUS spec."""
+    model_config = ConfigDict(validate_assignment=True)
+
+    column_names: list[str] = Field(..., description="List of column names in the schema to validate.", min_length=1, max_length=100)
+    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
+
+class GenerateIdeRulesInput(BaseModel):
+    """Input model for generating IDE rules files."""
+    model_config = ConfigDict(validate_assignment=True)
+
+    ide: str = Field(default="cursor", description="Target IDE: 'cursor', 'claude', or 'antigravity'.")
+    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
+
+
+# ── Vibe-Coder MCP Tools ─────────────────────────────────────────────────────
+
+
+@mcp.tool(
+    name="finops_get_focus_column",
+    annotations={
+        "title": "Get FOCUS Column Definition",
+        "readOnlyHint": True,
+        "openWorldHint": False
+    }
+)
+def finops_get_focus_column(params: GetFocusColumnInput) -> str:
+    """Look up a FOCUS spec column definition by name (fuzzy matched).
+
+    Use this BEFORE defining any data schema or column for cloud cost, billing,
+    or usage data. Returns the canonical column name, data type, whether it's
+    required, allowed values, and description. Call this when the user mentions
+    any column-like concept (e.g. 'effective cost', 'region', 'service name').
+    """
+    from finops_mcp.vector_store import (
+        fuzzy_search_structured,
+        get_structured_doc,
+        list_structured_docs,
+    )
+
+    try:
+        # Try exact match first (case-sensitive column_id)
+        result = get_structured_doc(params.column_name, config.FIRESTORE_FOCUS_COLLECTION)
+
+        # Fuzzy search by column_id
+        if result is None:
+            results = fuzzy_search_structured("column_id", params.column_name, config.FIRESTORE_FOCUS_COLLECTION)
+            if results:
+                result = results[0]
+
+        # Fuzzy search by display_name
+        if result is None:
+            results = fuzzy_search_structured("display_name", params.column_name, config.FIRESTORE_FOCUS_COLLECTION)
+            if results:
+                result = results[0]
+
+        if result is None:
+            # List all available columns as suggestions
+            all_cols = list_structured_docs(config.FIRESTORE_FOCUS_COLLECTION, limit=100)
+            col_names = [c.get("column_id", "") for c in all_cols]
+            return _format_error(
+                f"Column '{params.column_name}' not found. Available columns: {', '.join(sorted(col_names))}",
+                params.response_format
+            )
+
+        # Remove internal fields
+        result.pop("lowercase_column_id", None)
+        result.pop("lowercase_display_name", None)
+        result.pop("updated_at", None)
+        result.pop("id", None)
+
+        if params.response_format == ResponseFormat.JSON:
+            return json.dumps(result, indent=2, default=str)
+
+        lines = [
+            f"# FOCUS Column: {result.get('display_name', '')}",
+            f"**Column ID**: `{result.get('column_id', '')}`",
+            f"**Category**: {result.get('category', '')}",
+            f"**Data Type**: `{result.get('data_type', '')}`",
+            f"**Required**: {'Yes' if result.get('required') else 'No'}",
+        ]
+        if result.get("allowed_values"):
+            lines.append(f"**Allowed Values**: {result['allowed_values']}")
+        lines.append(f"\n{result.get('description', '')}")
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.exception("Error getting FOCUS column")
+        return _format_error(str(e), params.response_format)
+
+
+@mcp.tool(
+    name="finops_normalize_term",
+    annotations={
+        "title": "Normalize FinOps Terminology",
+        "readOnlyHint": True,
+        "openWorldHint": False
+    }
+)
+def finops_normalize_term(params: NormalizeTermInput) -> str:
+    """Map informal developer language to canonical FinOps terminology.
+
+    Use this when the user uses informal terms like 'cloud bill', 'actual cost',
+    'reservation', or 'cost type'. Returns the canonical FinOps term, definition,
+    related FOCUS columns, and terms to avoid. Always call this when you notice
+    the user or codebase using non-standard FinOps terminology.
+    """
+    from finops_mcp.vector_store import (
+        fuzzy_search_structured,
+        list_structured_docs,
+    )
+
+    try:
+        query = params.term.lower().strip()
+
+        # Search all terms and check aliases
+        all_terms = list_structured_docs(config.FIRESTORE_TERMS_COLLECTION, limit=100)
+        matched = None
+
+        for t in all_terms:
+            # Check canonical term
+            if t.get("term", "").lower() == query or t.get("display_name", "").lower() == query:
+                matched = t
+                break
+            # Check aliases
+            aliases = [a.lower() for a in t.get("aliases", [])]
+            if query in aliases:
+                matched = t
+                break
+
+        # Fallback: fuzzy search by term name
+        if matched is None:
+            results = fuzzy_search_structured("term", params.term, config.FIRESTORE_TERMS_COLLECTION)
+            if results:
+                matched = results[0]
+
+        if matched is None:
+            results = fuzzy_search_structured("display_name", params.term, config.FIRESTORE_TERMS_COLLECTION)
+            if results:
+                matched = results[0]
+
+        if matched is None:
+            term_names = [t.get("display_name", "") for t in all_terms]
+            return _format_error(
+                f"Term '{params.term}' not found. Known terms: {', '.join(sorted(term_names))}",
+                params.response_format
+            )
+
+        # Clean up internal fields
+        matched.pop("lowercase_term", None)
+        matched.pop("lowercase_display_name", None)
+        matched.pop("updated_at", None)
+        matched.pop("id", None)
+
+        if params.response_format == ResponseFormat.JSON:
+            return json.dumps(matched, indent=2, default=str)
+
+        lines = [
+            f"# Canonical Term: {matched.get('display_name', '')}",
+            f"**Term ID**: `{matched.get('term', '')}`",
+            f"\n**Definition**: {matched.get('definition', '')}",
+        ]
+        if matched.get("aliases"):
+            lines.append(f"\n**Also known as**: {', '.join(matched['aliases'])}")
+        if matched.get("do_not_say"):
+            lines.append(f"\n**Do NOT say**: {', '.join(matched['do_not_say'])}")
+        if matched.get("focus_columns"):
+            lines.append(f"\n**Related FOCUS columns**: {', '.join(f'`{c}`' for c in matched['focus_columns'])}")
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.exception("Error normalizing term")
+        return _format_error(str(e), params.response_format)
+
+
+@mcp.tool(
+    name="finops_check_focus_compliance",
+    annotations={
+        "title": "Check FOCUS Spec Compliance",
+        "readOnlyHint": True,
+        "openWorldHint": False
+    }
+)
+def finops_check_focus_compliance(params: CheckFocusComplianceInput) -> str:
+    """Validate a list of column names against the FOCUS specification.
+
+    Use this BEFORE finalizing any data schema, database table, or data pipeline
+    that handles cloud cost or billing data. Identifies missing required columns,
+    non-standard column names, and suggests corrections. Always call this when
+    reviewing or creating schemas for cost/billing/usage data.
+    """
+    from finops_mcp.vector_store import list_structured_docs
+
+    try:
+        all_cols = list_structured_docs(config.FIRESTORE_FOCUS_COLLECTION, limit=100)
+        col_map = {c["column_id"]: c for c in all_cols}
+        col_map_lower = {c["column_id"].lower(): c for c in all_cols}
+
+        required_cols = [c["column_id"] for c in all_cols if c.get("required")]
+        input_cols_lower = {c.lower(): c for c in params.column_names}
+
+        # Check which required columns are missing
+        missing_required = []
+        for req in required_cols:
+            if req.lower() not in input_cols_lower:
+                missing_required.append(req)
+
+        # Check for non-standard names
+        non_standard = []
+        suggestions = []
+        recognized = []
+        for col in params.column_names:
+            if col in col_map:
+                recognized.append(col)
+            elif col.lower() in col_map_lower:
+                correct = col_map_lower[col.lower()]["column_id"]
+                non_standard.append({"provided": col, "correct": correct, "issue": "wrong_case"})
+            else:
+                # Try fuzzy matching
+                best_match = None
+                for known_col in col_map:
+                    if col.lower().replace(" ", "").replace("_", "") == known_col.lower().replace(" ", "").replace("_", ""):
+                        best_match = known_col
+                        break
+                if best_match:
+                    non_standard.append({"provided": col, "correct": best_match, "issue": "non_standard_name"})
+                else:
+                    non_standard.append({"provided": col, "correct": None, "issue": "unknown_column"})
+
+        result = {
+            "recognized_columns": len(recognized),
+            "total_columns_provided": len(params.column_names),
+            "missing_required": missing_required,
+            "non_standard_names": non_standard,
+            "compliance_score": f"{len(recognized)}/{len(params.column_names)} columns recognized, {len(required_cols) - len(missing_required)}/{len(required_cols)} required present",
+        }
+
+        if params.response_format == ResponseFormat.JSON:
+            return json.dumps(result, indent=2, default=str)
+
+        lines = [
+            "# FOCUS Compliance Check",
+            f"**Score**: {result['compliance_score']}",
+        ]
+        if missing_required:
+            lines.append(f"\n## Missing Required Columns ({len(missing_required)})")
+            for col in missing_required:
+                desc = col_map.get(col, {}).get("description", "")
+                lines.append(f"- `{col}`: {desc}")
+        if non_standard:
+            lines.append(f"\n## Non-Standard Column Names ({len(non_standard)})")
+            for ns in non_standard:
+                if ns["correct"]:
+                    lines.append(f"- `{ns['provided']}` → should be `{ns['correct']}` ({ns['issue']})")
+                else:
+                    lines.append(f"- `{ns['provided']}` — not a FOCUS column")
+        if not missing_required and not non_standard:
+            lines.append("\n✅ All columns are FOCUS-compliant!")
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.exception("Error checking FOCUS compliance")
+        return _format_error(str(e), params.response_format)
+
+
+@mcp.tool(
+    name="finops_generate_ide_rules",
+    annotations={
+        "title": "Generate IDE Rules File",
+        "readOnlyHint": True,
+        "openWorldHint": False
+    }
+)
+def finops_generate_ide_rules(params: GenerateIdeRulesInput) -> str:
+    """Generate an IDE rules file pre-loaded with FinOps conventions.
+
+    Use this when setting up a new project that will involve cloud cost data,
+    FinOps tooling, or FOCUS-compliant schemas. The output is a text file
+    (e.g. .cursorrules) the user drops in their repo root so all future
+    IDE prompts are automatically FinOps-aware.
+    """
+    from finops_mcp.vector_store import list_structured_docs
+
+    try:
+        # Load terms and columns for the rules file
+        terms = list_structured_docs(config.FIRESTORE_TERMS_COLLECTION, limit=100)
+        columns = list_structured_docs(config.FIRESTORE_FOCUS_COLLECTION, limit=100)
+
+        # Build terminology section
+        term_lines = []
+        for t in sorted(terms, key=lambda x: x.get("term", "")):
+            aliases = ", ".join(t.get("aliases", []))
+            do_not = ", ".join(t.get("do_not_say", []))
+            term_lines.append(f"- **{t.get('display_name', '')}** (`{t.get('term', '')}`): {t.get('definition', '')}")
+            if aliases:
+                term_lines.append(f"  - Also known as: {aliases}")
+            if do_not:
+                term_lines.append(f"  - Do NOT say: {do_not}")
+
+        # Build column reference
+        categories: dict[str, list[str]] = {}
+        for c in columns:
+            cat = c.get("category", "Other")
+            if cat not in categories:
+                categories[cat] = []
+            req = " (required)" if c.get("required") else ""
+            categories[cat].append(f"`{c.get('column_id', '')}` — {c.get('data_type', '')}{req}")
+
+        col_lines = []
+        for cat in sorted(categories.keys()):
+            col_lines.append(f"\n### {cat}")
+            for col_str in categories[cat]:
+                col_lines.append(f"- {col_str}")
+
+        ide_name = {"cursor": ".cursorrules", "claude": "CLAUDE.md", "antigravity": "AGENTS.md"}.get(
+            params.ide.lower(), ".cursorrules"
+        )
+
+        rules = f"""# FinOps Development Rules ({ide_name})
+# Auto-generated by FinOps MCP Server
+
+## General Guidelines
+
+When writing code that handles cloud cost data, billing, or FinOps reporting:
+
+1. Always use canonical FOCUS column names (PascalCase) — never invent your own.
+2. Use the terminology defined below — avoid informal equivalents.
+3. All monetary values should include a currency column (BillingCurrency or PricingCurrency).
+4. Cost columns (BilledCost, EffectiveCost, ListCost) are Decimal types — never use float.
+5. Date/time columns use UTC ISO 8601 format.
+6. Tags are stored as JSON objects, not arrays.
+
+## FinOps Terminology
+
+{chr(10).join(term_lines)}
+
+## FOCUS Column Reference
+{chr(10).join(col_lines)}
+
+## Code Patterns
+
+### Cost Allocation
+- Always include SubAccountId and Tags for cost allocation.
+- Use EffectiveCost (not BilledCost) for amortized cost analysis.
+- Use BilledCost for invoice reconciliation.
+- Use ListCost for savings calculations (ListCost - EffectiveCost).
+
+### Commitment Discounts
+- Check CommitmentDiscountStatus (Used/Unused) when analyzing coverage.
+- Use CommitmentDiscountCategory (Spend/Usage) to distinguish CUD types.
+- Never mix commitment purchase charges (ChargeCategory=Purchase) with usage charges.
+
+### Data Quality
+- Always validate ChargeCategory is one of: Adjustment, Purchase, Tax, Usage.
+- Filter out ChargeClass=Correction rows for point-in-time analysis.
+- Ensure BillingPeriodStart <= ChargePeriodStart.
+"""
+        return rules
+
+    except Exception as e:
+        logger.exception("Error generating IDE rules")
         return _format_error(str(e), params.response_format)
 
 
