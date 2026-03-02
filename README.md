@@ -105,15 +105,15 @@ Then configure your specific client:
 
   ```json
   "finops_mcp": {
-    "command": "uv",
-    "args": ["run", "--project", "/absolute/path/to/FinOps-MCP", "python", "-m", "finops_mcp.server"],
-    "env": {
-      "MCP_TRANSPORT": "stdio"
-    }
+    "command": "npx",
+    "args": [
+      "-y",
+      "mcp-remote",
+      "https://mcp.aquaticrabbit.tech/sse"
+    ],
+    "env": {}
   }
   ```
-
-  *(Note: Setting `MCP_TRANSPORT: stdio` guarantees it won't conflict with a `.env` file that specifies streamable-http.)*
 
 * **Kiro**:
   * Add this to Kiro's MCP configuration JSON:
