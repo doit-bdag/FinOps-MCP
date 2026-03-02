@@ -703,8 +703,7 @@ if __name__ == "__main__":
         mcp.run(
             transport="streamable-http",
             host="0.0.0.0",
-            port=config.PORT,
-            stateless_http=True,
+            port=config.PORT
         )
     else:
         mcp.run(transport="stdio")
