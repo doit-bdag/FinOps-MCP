@@ -6,10 +6,10 @@ import asyncio
 import json
 import logging
 import sys
-from enum import Enum
+from typing import Annotated, Literal
 
 from fastmcp import FastMCP
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field
 
 from finops_mcp import config
 
@@ -33,60 +33,14 @@ mcp = FastMCP(
         "mentions cost, spend, billing, allocation, chargeback, showback, "
         "unit economics, commitment discounts, or cloud financial management."
     ),
-    version="0.2.0",
+    version="0.2.1",
 )
-
-# ── Enums & Pydantic Models ──────────────────────────────────────────────────
-
-class ResponseFormat(str, Enum):
-    """Output format for tool responses."""
-    MARKDOWN = "markdown"
-    JSON = "json"
-
-class SearchDocsInput(BaseModel):
-    """Input model for searching FinOps documentation."""
-    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
-
-    query: str = Field(..., description="Search query string, e.g., 'What is cloud sustainability?'", min_length=2, max_length=500)
-    top_k: int = Field(default=5, description="Number of results to return", ge=1, le=20)
-    source_filter: str | None = Field(default=None, description="Optional URL prefix filter to scope results.")
-    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
-
-class ListSourcesInput(BaseModel):
-    """Input model for listing FinOps sources."""
-    model_config = ConfigDict(validate_assignment=True)
-
-    limit: int = Field(default=20, description="Maximum results to return", ge=1, le=100)
-    offset: int = Field(default=0, description="Number of results to skip for pagination", ge=0)
-    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
-
-class GetPageInput(BaseModel):
-    """Input model for retrieving a single FinOps page."""
-    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
-
-    url: str = Field(..., description="The exact URL of the page to retrieve.")
-    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
-
-class BatchGetPagesInput(BaseModel):
-    """Input model for retrieving multiple FinOps pages."""
-    model_config = ConfigDict(validate_assignment=True)
-
-    urls: list[str] = Field(..., description="List of exact URLs to retrieve", min_length=1, max_length=20)
-    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
-
-class TriggerCrawlInput(BaseModel):
-    """Input model for triggering a URL crawl."""
-    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
-
-    url: str = Field(..., description="The URL to crawl.")
-    depth: int = Field(default=2, description="How many levels of links to follow", ge=0, le=5)
-    response_format: ResponseFormat = Field(default=ResponseFormat.JSON, description="Output format")
 
 # ── Shared utilities ─────────────────────────────────────────────────────────
 
-def _format_error(msg: str, response_format: ResponseFormat) -> str:
+def _format_error(msg: str, response_format: str = "markdown") -> str:
     """Format errors based on requested format."""
-    if response_format == ResponseFormat.JSON:
+    if response_format == "json":
         return json.dumps({"error": msg})
     return f"**Error**: {msg}"
 
@@ -100,7 +54,12 @@ def _format_error(msg: str, response_format: ResponseFormat) -> str:
         "openWorldHint": False
     }
 )
-def finops_search_docs(params: SearchDocsInput) -> str:
+def finops_search_docs(
+    query: Annotated[str, Field(description="Search query string, e.g., 'What is cloud sustainability?'", min_length=2, max_length=500)],
+    top_k: Annotated[int, Field(description="Number of results to return", ge=1, le=20)] = 5,
+    source_filter: Annotated[str | None, Field(description="Optional URL prefix filter to scope results.")] = None,
+    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+) -> str:
     """Search for documentation about FinOps concepts, frameworks, and practices.
 
     This tool semantic searches the indexed FinOps Foundation documentation and
@@ -117,23 +76,23 @@ def finops_search_docs(params: SearchDocsInput) -> str:
 
     try:
         query_embedding = get_query_embedding(
-            params.query, config.GCP_PROJECT_ID, config.GCP_LOCATION
+            query, config.GCP_PROJECT_ID, config.GCP_LOCATION
         )
         results = search(
             query_embedding=query_embedding,
             collection_name=config.FIRESTORE_COLLECTION,
-            top_k=params.top_k,
-            source_filter=params.source_filter,
+            top_k=top_k,
+            source_filter=source_filter,
         )
 
         if not results:
-            return _format_error("No results found. The collection may be empty.", params.response_format)
+            return _format_error("No results found. The collection may be empty.", response_format)
 
-        if params.response_format == ResponseFormat.JSON:
+        if response_format == "json":
             return json.dumps({"results": results}, indent=2)
 
         # Markdown formatting
-        lines = [f"# Search Results: '{params.query}'", ""]
+        lines = [f"# Search Results: '{query}'", ""]
         for i, r in enumerate(results, 1):
             lines.append(f"## {i}. {r.get('title', 'Untitled')} ({r.get('similarity_score', 0):.2f})")
             lines.append(f"**URL**: {r.get('url')}")
@@ -141,12 +100,12 @@ def finops_search_docs(params: SearchDocsInput) -> str:
                 lines.append(f"**Section**: {r.get('section_header')}")
             lines.append(f"\n{r.get('text', '')}\n")
             lines.append("---")
-            
+
         return "\n".join(lines)
 
     except Exception as e:
         logger.exception("Error searching docs")
-        return _format_error(str(e), params.response_format)
+        return _format_error(str(e), response_format)
 
 
 @mcp.tool(
@@ -157,7 +116,11 @@ def finops_search_docs(params: SearchDocsInput) -> str:
         "openWorldHint": False
     }
 )
-def finops_list_sources(params: ListSourcesInput) -> str:
+def finops_list_sources(
+    limit: Annotated[int, Field(description="Maximum results to return", ge=1, le=100)] = 20,
+    offset: Annotated[int, Field(description="Number of results to skip for pagination", ge=0)] = 0,
+    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+) -> str:
     """List all crawled FinOps documentation source URLs with pagination.
 
     Use this to discover what FinOps documentation is available for search.
@@ -167,29 +130,28 @@ def finops_list_sources(params: ListSourcesInput) -> str:
     from finops_mcp.vector_store import list_sources
 
     try:
-        # We pass limit and offset down to the datastore
-        sources_data = list_sources(config.FIRESTORE_COLLECTION, limit=params.limit, offset=params.offset)
-        
-        if not sources_data.get("items"):
-            return _format_error("No sources indexed yet.", params.response_format)
+        sources_data = list_sources(config.FIRESTORE_COLLECTION, limit=limit, offset=offset)
 
-        if params.response_format == ResponseFormat.JSON:
+        if not sources_data.get("items"):
+            return _format_error("No sources indexed yet.", response_format)
+
+        if response_format == "json":
             return json.dumps(sources_data, indent=2, default=str)
 
         lines = [f"# Indexed Sources (Total: {sources_data['total']})", ""]
         lines.append(f"Showing {sources_data['count']} items (offset: {sources_data['offset']})")
         lines.append("")
-        
+
         for s in sources_data["items"]:
             lines.append(f"- [{s.get('title', 'Untitled')}]({s.get('url')}) ({s.get('chunk_count', 0)} chunks)")
-            
+
         if sources_data["has_more"]:
             lines.append(f"\n*Has more items. Use offset={sources_data['next_offset']} to see the next page.*")
-            
+
         return "\n".join(lines)
     except Exception as e:
         logger.exception("Error listing sources")
-        return _format_error(str(e), params.response_format)
+        return _format_error(str(e), response_format)
 
 
 @mcp.tool(
@@ -200,7 +162,10 @@ def finops_list_sources(params: ListSourcesInput) -> str:
         "openWorldHint": False
     }
 )
-def finops_get_page(params: GetPageInput) -> str:
+def finops_get_page(
+    url: Annotated[str, Field(description="The exact URL of the page to retrieve.")],
+    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+) -> str:
     """Retrieve the full text content of a single FinOps document by URL.
 
     Use this when you need the complete context of a specific FinOps page rather
@@ -211,14 +176,13 @@ def finops_get_page(params: GetPageInput) -> str:
     from finops_mcp.vector_store import get_page
 
     try:
-        result = get_page(params.url, config.FIRESTORE_COLLECTION)
+        result = get_page(url, config.FIRESTORE_COLLECTION)
         if result is None:
-            return _format_error(f"Page not found: {params.url}", params.response_format)
+            return _format_error(f"Page not found: {url}", response_format)
 
-        if params.response_format == ResponseFormat.JSON:
+        if response_format == "json":
             return json.dumps(result, indent=2, default=str)
 
-        # Markdown formatting
         lines = [
             f"# {result.get('title', 'Untitled')}",
             f"**URL**: {result.get('url')}",
@@ -229,7 +193,7 @@ def finops_get_page(params: GetPageInput) -> str:
         return "\n".join(lines)
     except Exception as e:
         logger.exception("Error getting page")
-        return _format_error(str(e), params.response_format)
+        return _format_error(str(e), response_format)
 
 
 @mcp.tool(
@@ -240,7 +204,10 @@ def finops_get_page(params: GetPageInput) -> str:
         "openWorldHint": False
     }
 )
-def finops_batch_get_pages(params: BatchGetPagesInput) -> str:
+def finops_batch_get_pages(
+    urls: Annotated[list[str], Field(description="List of exact URLs to retrieve", min_length=1, max_length=20)],
+    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+) -> str:
     """Retrieve the full text content of up to 20 FinOps documents in a single call.
 
     Use this when you need the full content of multiple related FinOps pages at
@@ -251,32 +218,31 @@ def finops_batch_get_pages(params: BatchGetPagesInput) -> str:
 
     try:
         results = []
-        for url in params.urls:
-            page = get_page(url, config.FIRESTORE_COLLECTION)
+        for u in urls:
+            page = get_page(u, config.FIRESTORE_COLLECTION)
             if page:
                 results.append(page)
             else:
-                results.append({"url": url, "error": "Page not found"})
+                results.append({"url": u, "error": "Page not found"})
 
-        if params.response_format == ResponseFormat.JSON:
+        if response_format == "json":
             return json.dumps({"pages": results}, indent=2, default=str)
 
-        # Markdown
         lines = [f"# Batch Page Results ({len(results)} pages)", ""]
         for r in results:
             if "error" in r:
                 lines.append(f"## Error: {r['url']}")
                 lines.append("Page not found.\n---")
                 continue
-                
+
             lines.append(f"## {r.get('title', 'Untitled')}")
             lines.append(f"**URL**: {r.get('url')}")
             lines.append(f"\n{r.get('full_text', '')}\n---")
-            
+
         return "\n".join(lines)
     except Exception as e:
         logger.exception("Error in batch get pages")
-        return _format_error(str(e), params.response_format)
+        return _format_error(str(e), response_format)
 
 
 @mcp.tool(
@@ -289,7 +255,11 @@ def finops_batch_get_pages(params: BatchGetPagesInput) -> str:
         "openWorldHint": True
     }
 )
-def finops_trigger_crawl(params: TriggerCrawlInput) -> str:
+def finops_trigger_crawl(
+    url: Annotated[str, Field(description="The URL to crawl.")],
+    depth: Annotated[int, Field(description="How many levels of links to follow", ge=0, le=5)] = 2,
+    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "json",
+) -> str:
     """Crawl and index a custom URL into the FinOps documentation store.
 
     Use this to add new FinOps Foundation content that is not yet indexed, or
@@ -299,10 +269,10 @@ def finops_trigger_crawl(params: TriggerCrawlInput) -> str:
     from finops_mcp.crawler import crawl_url
 
     try:
-        result = asyncio.run(crawl_url(params.url, max_depth=params.depth, skip_existing=False))
-        if params.response_format == ResponseFormat.JSON:
+        result = asyncio.run(crawl_url(url, max_depth=depth, skip_existing=False))
+        if response_format == "json":
             return json.dumps(result, indent=2, default=str)
-            
+
         return (
             f"**Crawl Complete**\n"
             f"- Pages crawled: {result.get('pages_crawled', 0)}\n"
@@ -311,38 +281,7 @@ def finops_trigger_crawl(params: TriggerCrawlInput) -> str:
         )
     except Exception as e:
         logger.exception("Error triggering crawl")
-        return _format_error(str(e), params.response_format)
-
-
-# ── Phase 3 & 4: Vibe-Coder Tool Models ─────────────────────────────────────
-
-class GetFocusColumnInput(BaseModel):
-    """Input model for looking up a FOCUS column definition."""
-    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
-
-    column_name: str = Field(..., description="Column name or display name to look up (fuzzy matched).", min_length=1, max_length=100)
-    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
-
-class NormalizeTermInput(BaseModel):
-    """Input model for normalizing informal FinOps terminology."""
-    model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
-
-    term: str = Field(..., description="Informal term to normalize (e.g. 'cloud bill', 'real cost').", min_length=1, max_length=200)
-    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
-
-class CheckFocusComplianceInput(BaseModel):
-    """Input model for checking schema compliance with the FOCUS spec."""
-    model_config = ConfigDict(validate_assignment=True)
-
-    column_names: list[str] = Field(..., description="List of column names in the schema to validate.", min_length=1, max_length=100)
-    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
-
-class GenerateIdeRulesInput(BaseModel):
-    """Input model for generating IDE rules files."""
-    model_config = ConfigDict(validate_assignment=True)
-
-    ide: str = Field(default="cursor", description="Target IDE: 'cursor', 'claude', or 'antigravity'.")
-    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
+        return _format_error(str(e), response_format)
 
 
 # ── Vibe-Coder MCP Tools ─────────────────────────────────────────────────────
@@ -356,7 +295,10 @@ class GenerateIdeRulesInput(BaseModel):
         "openWorldHint": False
     }
 )
-def finops_get_focus_column(params: GetFocusColumnInput) -> str:
+def finops_get_focus_column(
+    column_name: Annotated[str, Field(description="Column name or display name to look up (fuzzy matched).", min_length=1, max_length=100)],
+    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+) -> str:
     """Look up a FOCUS spec column definition by name (fuzzy matched).
 
     Use this BEFORE defining any data schema or column for cloud cost, billing,
@@ -372,17 +314,17 @@ def finops_get_focus_column(params: GetFocusColumnInput) -> str:
 
     try:
         # Try exact match first (case-sensitive column_id)
-        result = get_structured_doc(params.column_name, config.FIRESTORE_FOCUS_COLLECTION)
+        result = get_structured_doc(column_name, config.FIRESTORE_FOCUS_COLLECTION)
 
         # Fuzzy search by column_id
         if result is None:
-            results = fuzzy_search_structured("column_id", params.column_name, config.FIRESTORE_FOCUS_COLLECTION)
+            results = fuzzy_search_structured("column_id", column_name, config.FIRESTORE_FOCUS_COLLECTION)
             if results:
                 result = results[0]
 
         # Fuzzy search by display_name
         if result is None:
-            results = fuzzy_search_structured("display_name", params.column_name, config.FIRESTORE_FOCUS_COLLECTION)
+            results = fuzzy_search_structured("display_name", column_name, config.FIRESTORE_FOCUS_COLLECTION)
             if results:
                 result = results[0]
 
@@ -391,8 +333,8 @@ def finops_get_focus_column(params: GetFocusColumnInput) -> str:
             all_cols = list_structured_docs(config.FIRESTORE_FOCUS_COLLECTION, limit=100)
             col_names = [c.get("column_id", "") for c in all_cols]
             return _format_error(
-                f"Column '{params.column_name}' not found. Available columns: {', '.join(sorted(col_names))}",
-                params.response_format
+                f"Column '{column_name}' not found. Available columns: {', '.join(sorted(col_names))}",
+                response_format
             )
 
         # Remove internal fields
@@ -401,7 +343,7 @@ def finops_get_focus_column(params: GetFocusColumnInput) -> str:
         result.pop("updated_at", None)
         result.pop("id", None)
 
-        if params.response_format == ResponseFormat.JSON:
+        if response_format == "json":
             return json.dumps(result, indent=2, default=str)
 
         lines = [
@@ -418,7 +360,7 @@ def finops_get_focus_column(params: GetFocusColumnInput) -> str:
 
     except Exception as e:
         logger.exception("Error getting FOCUS column")
-        return _format_error(str(e), params.response_format)
+        return _format_error(str(e), response_format)
 
 
 @mcp.tool(
@@ -429,7 +371,10 @@ def finops_get_focus_column(params: GetFocusColumnInput) -> str:
         "openWorldHint": False
     }
 )
-def finops_normalize_term(params: NormalizeTermInput) -> str:
+def finops_normalize_term(
+    term: Annotated[str, Field(description="Informal term to normalize (e.g. 'cloud bill', 'real cost').", min_length=1, max_length=200)],
+    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+) -> str:
     """Map informal developer language to canonical FinOps terminology.
 
     Use this when the user uses informal terms like 'cloud bill', 'actual cost',
@@ -443,7 +388,7 @@ def finops_normalize_term(params: NormalizeTermInput) -> str:
     )
 
     try:
-        query = params.term.lower().strip()
+        query = term.lower().strip()
 
         # Search all terms and check aliases
         all_terms = list_structured_docs(config.FIRESTORE_TERMS_COLLECTION, limit=100)
@@ -462,20 +407,20 @@ def finops_normalize_term(params: NormalizeTermInput) -> str:
 
         # Fallback: fuzzy search by term name
         if matched is None:
-            results = fuzzy_search_structured("term", params.term, config.FIRESTORE_TERMS_COLLECTION)
+            results = fuzzy_search_structured("term", term, config.FIRESTORE_TERMS_COLLECTION)
             if results:
                 matched = results[0]
 
         if matched is None:
-            results = fuzzy_search_structured("display_name", params.term, config.FIRESTORE_TERMS_COLLECTION)
+            results = fuzzy_search_structured("display_name", term, config.FIRESTORE_TERMS_COLLECTION)
             if results:
                 matched = results[0]
 
         if matched is None:
             term_names = [t.get("display_name", "") for t in all_terms]
             return _format_error(
-                f"Term '{params.term}' not found. Known terms: {', '.join(sorted(term_names))}",
-                params.response_format
+                f"Term '{term}' not found. Known terms: {', '.join(sorted(term_names))}",
+                response_format
             )
 
         # Clean up internal fields
@@ -484,7 +429,7 @@ def finops_normalize_term(params: NormalizeTermInput) -> str:
         matched.pop("updated_at", None)
         matched.pop("id", None)
 
-        if params.response_format == ResponseFormat.JSON:
+        if response_format == "json":
             return json.dumps(matched, indent=2, default=str)
 
         lines = [
@@ -502,7 +447,7 @@ def finops_normalize_term(params: NormalizeTermInput) -> str:
 
     except Exception as e:
         logger.exception("Error normalizing term")
-        return _format_error(str(e), params.response_format)
+        return _format_error(str(e), response_format)
 
 
 @mcp.tool(
@@ -513,7 +458,10 @@ def finops_normalize_term(params: NormalizeTermInput) -> str:
         "openWorldHint": False
     }
 )
-def finops_check_focus_compliance(params: CheckFocusComplianceInput) -> str:
+def finops_check_focus_compliance(
+    column_names: Annotated[list[str], Field(description="List of column names in the schema to validate.", min_length=1, max_length=100)],
+    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+) -> str:
     """Validate a list of column names against the FOCUS specification.
 
     Use this BEFORE finalizing any data schema, database table, or data pipeline
@@ -529,7 +477,7 @@ def finops_check_focus_compliance(params: CheckFocusComplianceInput) -> str:
         col_map_lower = {c["column_id"].lower(): c for c in all_cols}
 
         required_cols = [c["column_id"] for c in all_cols if c.get("required")]
-        input_cols_lower = {c.lower(): c for c in params.column_names}
+        input_cols_lower = {c.lower(): c for c in column_names}
 
         # Check which required columns are missing
         missing_required = []
@@ -539,9 +487,8 @@ def finops_check_focus_compliance(params: CheckFocusComplianceInput) -> str:
 
         # Check for non-standard names
         non_standard = []
-        suggestions = []
         recognized = []
-        for col in params.column_names:
+        for col in column_names:
             if col in col_map:
                 recognized.append(col)
             elif col.lower() in col_map_lower:
@@ -561,13 +508,13 @@ def finops_check_focus_compliance(params: CheckFocusComplianceInput) -> str:
 
         result = {
             "recognized_columns": len(recognized),
-            "total_columns_provided": len(params.column_names),
+            "total_columns_provided": len(column_names),
             "missing_required": missing_required,
             "non_standard_names": non_standard,
-            "compliance_score": f"{len(recognized)}/{len(params.column_names)} columns recognized, {len(required_cols) - len(missing_required)}/{len(required_cols)} required present",
+            "compliance_score": f"{len(recognized)}/{len(column_names)} columns recognized, {len(required_cols) - len(missing_required)}/{len(required_cols)} required present",
         }
 
-        if params.response_format == ResponseFormat.JSON:
+        if response_format == "json":
             return json.dumps(result, indent=2, default=str)
 
         lines = [
@@ -592,7 +539,7 @@ def finops_check_focus_compliance(params: CheckFocusComplianceInput) -> str:
 
     except Exception as e:
         logger.exception("Error checking FOCUS compliance")
-        return _format_error(str(e), params.response_format)
+        return _format_error(str(e), response_format)
 
 
 @mcp.tool(
@@ -603,7 +550,10 @@ def finops_check_focus_compliance(params: CheckFocusComplianceInput) -> str:
         "openWorldHint": False
     }
 )
-def finops_generate_ide_rules(params: GenerateIdeRulesInput) -> str:
+def finops_generate_ide_rules(
+    ide: Annotated[str, Field(description="Target IDE: 'cursor', 'claude', or 'antigravity'.")] = "cursor",
+    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+) -> str:
     """Generate an IDE rules file pre-loaded with FinOps conventions.
 
     Use this when setting up a new project that will involve cloud cost data,
@@ -645,7 +595,7 @@ def finops_generate_ide_rules(params: GenerateIdeRulesInput) -> str:
                 col_lines.append(f"- {col_str}")
 
         ide_name = {"cursor": ".cursorrules", "claude": "CLAUDE.md", "antigravity": "AGENTS.md"}.get(
-            params.ide.lower(), ".cursorrules"
+            ide.lower(), ".cursorrules"
         )
 
         rules = f"""# FinOps Development Rules ({ide_name})
@@ -691,7 +641,7 @@ When writing code that handles cloud cost data, billing, or FinOps reporting:
 
     except Exception as e:
         logger.exception("Error generating IDE rules")
-        return _format_error(str(e), params.response_format)
+        return _format_error(str(e), response_format)
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
