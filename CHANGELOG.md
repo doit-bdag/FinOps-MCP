@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 ### Added
+- **Automated Monthly Refresh**: GitHub Actions cron workflow (`monthly-refresh.yml`) + unified `scripts/refresh_all.py` orchestrator to automatically keep Firestore vector docs, FOCUS columns, and FinOps terms current with FinOps Foundation documentation. Runs on the 1st of each month; supports `--dry-run` for local testing.
 - **Structured Data Ingestion**: Added `ingest_focus.py` to parse definitions directly from focus.finops.org into a `finops_focus_columns` Firestore collection, enabling structured validation.
 - **Code-Oriented MCP Tools**: 
   - `finops_get_focus_column`: Fetch deep detail for a specific FOCUS column.
