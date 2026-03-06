@@ -59,6 +59,7 @@ jobs:
           FIRESTORE_FOCUS_COLLECTION: finops_focus_columns
           FIRESTORE_TERMS_COLLECTION: finops_terms
           CRAWL_MAX_DEPTH: "2"
+          CRAWL_MAX_PAGES: "30"
         run: |
           uv run python scripts/refresh_all.py 2>&1 | tee refresh_output.log
 

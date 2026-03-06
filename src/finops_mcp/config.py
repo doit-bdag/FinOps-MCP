@@ -29,6 +29,7 @@ PORT: int = int(os.getenv("PORT", "8080"))
 CRAWL_MAX_DEPTH: int = int(os.getenv("CRAWL_MAX_DEPTH", "3"))
 CRAWL_CONCURRENT_PAGES: int = int(os.getenv("CRAWL_CONCURRENT_PAGES", "5"))
 CRAWL_DELAY_MS: int = int(os.getenv("CRAWL_DELAY_MS", "500"))
+CRAWL_MAX_PAGES: int = int(os.getenv("CRAWL_MAX_PAGES", "50"))
 
 # ── Seed URLs ─────────────────────────────────────────────────────────────────
 SEED_URLS: list[str] = [

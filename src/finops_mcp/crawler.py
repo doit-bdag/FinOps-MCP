@@ -71,6 +71,15 @@ async def crawl_url(
         while queue:
             current_url, depth = queue.pop(0)
 
+            # Hard cap on total pages per crawl invocation
+            if pages_crawled >= config.CRAWL_MAX_PAGES:
+                logger.info(
+                    "Reached CRAWL_MAX_PAGES=%d, stopping crawl of %s",
+                    config.CRAWL_MAX_PAGES,
+                    url,
+                )
+                break
+
             # Normalize URL
             current_url = current_url.rstrip("/")
             if current_url in visited:
