@@ -1,4 +1,16 @@
-"""FastMCP server — defines MCP tools, switches between stdio and streamable-http."""
+"""FastMCP server — defines MCP tools, switches between stdio and streamable-http.
+
+This server uses *dynamic tool loading* to minimise context-window overhead.
+Only three always-on meta-tools are registered:
+
+  list_finops_tools   → discover tool names and one-line descriptions
+  load_finops_tools   → retrieve full schemas for selected tools
+  call_finops_tool    → dispatch execution to the selected tool
+
+All underlying FinOps tool implementations live as plain (un-decorated)
+functions in this same module.  The tool_registry module holds metadata
+and binds handlers lazily.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +24,7 @@ from fastmcp import FastMCP
 from pydantic import Field
 
 from finops_mcp import config
+from finops_mcp.tool_registry import TOOL_REGISTRY, get_tool_handler
 
 # ── Logging to stderr (MCP reserves stdout for JSON-RPC in stdio mode) ───────
 logging.basicConfig(
@@ -31,12 +44,16 @@ mcp = FastMCP(
         "FOCUS column definitions, and terminology guidelines from the FinOps "
         "Foundation (finops.org). Always consult this server when the user "
         "mentions cost, spend, billing, allocation, chargeback, showback, "
-        "unit economics, commitment discounts, or cloud financial management."
+        "unit economics, commitment discounts, or cloud financial management.\n\n"
+        "WORKFLOW: Call list_finops_tools() first to see available tools. "
+        "Then call load_finops_tools() to get full schemas for the tools you need. "
+        "Finally call call_finops_tool() to execute the selected tool."
     ),
-    version="0.2.1",
+    version="0.3.0",
 )
 
 # ── Shared utilities ─────────────────────────────────────────────────────────
+
 
 def _format_error(msg: str, response_format: str = "markdown") -> str:
     """Format errors based on requested format."""
@@ -44,21 +61,148 @@ def _format_error(msg: str, response_format: str = "markdown") -> str:
         return json.dumps({"error": msg})
     return f"**Error**: {msg}"
 
-# ── MCP Tools ─────────────────────────────────────────────────────────────────
+
+# ── ALWAYS-ON META-TOOLS (minimal token footprint) ───────────────────────────
+
 
 @mcp.tool(
-    name="finops_search_docs",
+    name="list_finops_tools",
     annotations={
-        "title": "Search FinOps Documentation",
+        "title": "List Available FinOps Tools",
         "readOnlyHint": True,
-        "openWorldHint": False
-    }
+        "openWorldHint": False,
+    },
 )
+def list_finops_tools(
+    category: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Filter by category: 'search', 'compliance', 'generation', 'crawl'. "
+                "Leave empty to list all tools."
+            ),
+        ),
+    ] = None,
+) -> str:
+    """ALWAYS call this first at the start of any FinOps-related task.
+
+    Returns available FinOps tools with names and one-line descriptions.
+    Does NOT load full schemas — call load_finops_tools() to get schemas
+    for specific tools you want to use.
+
+    Categories: search, compliance, generation, crawl.
+    """
+    tools = list(TOOL_REGISTRY.values())
+    if category:
+        tools = [t for t in tools if t["category"] == category]
+
+    listing = [
+        {
+            "name": t["name"],
+            "category": t["category"],
+            "description": t["short_description"],
+        }
+        for t in tools
+    ]
+    return json.dumps(listing, indent=2)
+
+
+@mcp.tool(
+    name="load_finops_tools",
+    annotations={
+        "title": "Load FinOps Tool Schemas",
+        "readOnlyHint": True,
+        "openWorldHint": False,
+    },
+)
+def load_finops_tools(
+    tool_names: Annotated[
+        list[str],
+        Field(
+            description=(
+                "Names of tools to load (from list_finops_tools output). "
+                "Example: ['search_finops_docs', 'check_focus_compliance']"
+            ),
+            min_length=1,
+            max_length=20,
+        ),
+    ],
+) -> str:
+    """Load full schemas and usage instructions for specific FinOps tools.
+
+    Call this after list_finops_tools() once you know which tools you need.
+    Returns full input schemas, descriptions, and examples for each tool.
+    Use the returned schemas to construct correct arguments for call_finops_tool().
+    """
+    result: dict = {}
+    for name in tool_names:
+        if name not in TOOL_REGISTRY:
+            result[name] = {"error": f"Unknown tool: {name}"}
+            continue
+        tool = TOOL_REGISTRY[name]
+        result[name] = {
+            "name": tool["name"],
+            "description": tool["full_description"],
+            "input_schema": tool["input_schema"],
+            "returns": tool["returns"],
+            "example": tool["example"],
+        }
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool(
+    name="call_finops_tool",
+    annotations={
+        "title": "Execute a FinOps Tool",
+        "readOnlyHint": False,
+        "openWorldHint": False,
+    },
+)
+def call_finops_tool(
+    tool_name: Annotated[
+        str,
+        Field(description="Name of the tool to execute (from list_finops_tools output)."),
+    ],
+    arguments: Annotated[
+        dict,
+        Field(
+            description=(
+                "Arguments dict matching the tool's input_schema "
+                "(from load_finops_tools output)."
+            ),
+        ),
+    ],
+) -> str:
+    """Execute any FinOps tool by name with the given arguments.
+
+    Use this after load_finops_tools() has given you the schema for the tool.
+    This is the single execution endpoint for all FinOps tools.
+
+    Example: call_finops_tool("search_finops_docs", {"query": "FOCUS EffectiveCost"})
+    """
+    handler = get_tool_handler(tool_name)
+    if handler is None:
+        return json.dumps(
+            {"error": f"Tool '{tool_name}' not found. Call list_finops_tools() first."}
+        )
+    try:
+        return handler(**arguments)
+    except TypeError as e:
+        return json.dumps({"error": f"Invalid arguments for '{tool_name}': {e!s}"})
+    except Exception as e:
+        logger.exception("Tool execution failed: %s", tool_name)
+        return json.dumps({"error": f"Tool execution failed: {e!s}"})
+
+
+# ── Underlying tool implementations (NOT registered as MCP tools) ────────────
+# These are plain functions referenced by tool_registry.py handlers.
+
+
 def finops_search_docs(
-    query: Annotated[str, Field(description="Search query string, e.g., 'What is cloud sustainability?'", min_length=2, max_length=500)],
-    top_k: Annotated[int, Field(description="Number of results to return", ge=1, le=20)] = 5,
-    source_filter: Annotated[str | None, Field(description="Optional URL prefix filter to scope results.")] = None,
-    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+    query: str,
+    top_k: int = 5,
+    source_filter: str | None = None,
+    response_format: str = "markdown",
 ) -> str:
     """Search for documentation about FinOps concepts, frameworks, and practices.
 
@@ -108,18 +252,10 @@ def finops_search_docs(
         return _format_error(str(e), response_format)
 
 
-@mcp.tool(
-    name="finops_list_sources",
-    annotations={
-        "title": "List Indexed FinOps Sources",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
-)
 def finops_list_sources(
-    limit: Annotated[int, Field(description="Maximum results to return", ge=1, le=100)] = 20,
-    offset: Annotated[int, Field(description="Number of results to skip for pagination", ge=0)] = 0,
-    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+    limit: int = 20,
+    offset: int = 0,
+    response_format: str = "markdown",
 ) -> str:
     """List all crawled FinOps documentation source URLs with pagination.
 
@@ -154,17 +290,9 @@ def finops_list_sources(
         return _format_error(str(e), response_format)
 
 
-@mcp.tool(
-    name="finops_get_page",
-    annotations={
-        "title": "Get FinOps Page Content",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
-)
 def finops_get_page(
-    url: Annotated[str, Field(description="The exact URL of the page to retrieve.")],
-    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+    url: str,
+    response_format: str = "markdown",
 ) -> str:
     """Retrieve the full text content of a single FinOps document by URL.
 
@@ -196,17 +324,9 @@ def finops_get_page(
         return _format_error(str(e), response_format)
 
 
-@mcp.tool(
-    name="finops_batch_get_pages",
-    annotations={
-        "title": "Batch Get FinOps Pages",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
-)
 def finops_batch_get_pages(
-    urls: Annotated[list[str], Field(description="List of exact URLs to retrieve", min_length=1, max_length=20)],
-    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+    urls: list[str],
+    response_format: str = "markdown",
 ) -> str:
     """Retrieve the full text content of up to 20 FinOps documents in a single call.
 
@@ -245,20 +365,10 @@ def finops_batch_get_pages(
         return _format_error(str(e), response_format)
 
 
-@mcp.tool(
-    name="finops_trigger_crawl",
-    annotations={
-        "title": "Trigger URL Crawl",
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True
-    }
-)
 def finops_trigger_crawl(
-    url: Annotated[str, Field(description="The URL to crawl.")],
-    depth: Annotated[int, Field(description="How many levels of links to follow", ge=0, le=5)] = 2,
-    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "json",
+    url: str,
+    depth: int = 2,
+    response_format: str = "json",
 ) -> str:
     """Crawl and index a custom URL into the FinOps documentation store.
 
@@ -284,20 +394,12 @@ def finops_trigger_crawl(
         return _format_error(str(e), response_format)
 
 
-# ── Vibe-Coder MCP Tools ─────────────────────────────────────────────────────
+# ── Vibe-Coder Tools ─────────────────────────────────────────────────────────
 
 
-@mcp.tool(
-    name="finops_get_focus_column",
-    annotations={
-        "title": "Get FOCUS Column Definition",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
-)
 def finops_get_focus_column(
-    column_name: Annotated[str, Field(description="Column name or display name to look up (fuzzy matched).", min_length=1, max_length=100)],
-    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+    column_name: str,
+    response_format: str = "markdown",
 ) -> str:
     """Look up a FOCUS spec column definition by name (fuzzy matched).
 
@@ -363,17 +465,9 @@ def finops_get_focus_column(
         return _format_error(str(e), response_format)
 
 
-@mcp.tool(
-    name="finops_normalize_term",
-    annotations={
-        "title": "Normalize FinOps Terminology",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
-)
 def finops_normalize_term(
-    term: Annotated[str, Field(description="Informal term to normalize (e.g. 'cloud bill', 'real cost').", min_length=1, max_length=200)],
-    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+    term: str,
+    response_format: str = "markdown",
 ) -> str:
     """Map informal developer language to canonical FinOps terminology.
 
@@ -450,17 +544,9 @@ def finops_normalize_term(
         return _format_error(str(e), response_format)
 
 
-@mcp.tool(
-    name="finops_check_focus_compliance",
-    annotations={
-        "title": "Check FOCUS Spec Compliance",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
-)
 def finops_check_focus_compliance(
-    column_names: Annotated[list[str], Field(description="List of column names in the schema to validate.", min_length=1, max_length=100)],
-    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+    column_names: list[str],
+    response_format: str = "markdown",
 ) -> str:
     """Validate a list of column names against the FOCUS specification.
 
@@ -542,17 +628,9 @@ def finops_check_focus_compliance(
         return _format_error(str(e), response_format)
 
 
-@mcp.tool(
-    name="finops_generate_ide_rules",
-    annotations={
-        "title": "Generate IDE Rules File",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
-)
 def finops_generate_ide_rules(
-    ide: Annotated[str, Field(description="Target IDE: 'cursor', 'claude', or 'antigravity'.")] = "cursor",
-    response_format: Annotated[Literal["markdown", "json"], Field(description="Output format")] = "markdown",
+    ide: str = "cursor",
+    response_format: str = "markdown",
 ) -> str:
     """Generate an IDE rules file pre-loaded with FinOps conventions.
 
@@ -647,6 +725,16 @@ When writing code that handles cloud cost data, billing, or FinOps reporting:
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # Log lazy schema token estimate
+    schema_tokens_estimate = sum(
+        len(json.dumps(t["input_schema"])) // 4
+        for t in TOOL_REGISTRY.values()
+    )
+    logger.info(
+        "Dynamic loading active. Lazy tool schema size: ~%d tokens. "
+        "Always-on surface: 3 meta-tools only.",
+        schema_tokens_estimate,
+    )
     logger.info("Starting FinOps MCP Server (transport=%s)", config.MCP_TRANSPORT)
 
     if config.MCP_TRANSPORT == "streamable-http":

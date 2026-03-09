@@ -8,15 +8,29 @@ It acts as a knowledge layer connecting your agent to Google Cloud Firestore Vec
 
 ## Function (Features)
 
-The server exposes the following tools directly to your AI agent so it can read and navigate the FinOps framework autonomously:
+The server uses **dynamic tool loading** to minimise context-window overhead. Only 3 lightweight meta-tools are injected at session start (~800 tokens instead of ~12k+). Your agent discovers and loads full tool schemas on demand.
 
-| Tool                     | Description                                 |
-| ------------------------ | ------------------------------------------- |
-| `finops_search_docs`     | Semantic search across FinOps documentation |
-| `finops_list_sources`    | List all crawled URLs with metadata         |
-| `finops_get_page`        | Get full text of a specific page            |
-| `finops_batch_get_pages` | Get full text of multiple pages at once     |
-| `finops_trigger_crawl`   | Crawl and index a URL on demand             |
+### Meta-Tools (always available)
+
+| Tool                | Description                                                 |
+| ------------------- | ----------------------------------------------------------- |
+| `list_finops_tools` | Discover available tools — names and one-line descriptions  |
+| `load_finops_tools` | Load full input schemas for selected tools                  |
+| `call_finops_tool`  | Execute any tool by name with arguments matching its schema |
+
+### Underlying Tools (accessed via `call_finops_tool`)
+
+| Tool Name                | Category   | Description                                                 |
+| ------------------------ | ---------- | ----------------------------------------------------------- |
+| `search_finops_docs`     | search     | Semantic search across FinOps documentation                 |
+| `list_finops_sources`    | search     | List all crawled URLs with metadata                         |
+| `get_finops_page`        | search     | Get full text of a specific page                            |
+| `batch_get_finops_pages` | search     | Get full text of multiple pages at once                     |
+| `trigger_finops_crawl`   | crawl      | Crawl and index a URL on demand                             |
+| `get_focus_column`       | compliance | Look up a FOCUS spec column definition (fuzzy matched)      |
+| `normalize_finops_term`  | compliance | Map informal language to canonical FinOps terminology       |
+| `check_focus_compliance` | compliance | Validate column names against the FOCUS spec                |
+| `generate_ide_rules`     | generation | Generate IDE rules files pre-loaded with FinOps conventions |
 
 ## Setup Instructions
 
