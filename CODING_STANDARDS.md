@@ -15,7 +15,12 @@ Our workflow leverages declarative AI alignment rules to maintain a consistently
 This project is built using Python 3.11+ and `FastMCP`.
 
 - **Package Management:** Use `uv`. To run things use `uv run python script.py` or `uv run pytest`.
-- **Tool Creation:** All agent-tools must be declared formally using FastMCP tools. Every tool requires a robust docstring that explains *when* an AI agent should select it over other tools. Input options must be strongly typed using Pydantic Models for fast schema export.
+- **Tool Creation (Dynamic Loading Pattern):** Instead of directly registering endpoints via `@mcp.tool()`, which inflates context windows at session-start, we use a *dynamic tool loading* pattern.
+  1. Write your tool as a vanilla async Python function in `server.py` using Pydantic models for argument validation.
+  2. Maintain a comprehensive JSON schema entry (with `name`, `description`, `input_schema`, and `category`) in `tool_registry.py`.
+  3. Map the tool's string name to its async function handler inside `TOOL_HANDLERS` in `tool_registry.py`.
+  4. Ensure the schema docstrings explicitly tell AI agents *when* to invoke the tool.
+  5. The front-end surface is purely `list_finops_tools`, `load_finops_tools`, and `call_finops_tool` to execute these lazily.
 - **Line Length & Formatting:** We use `ruff` to lint Python files. Ensure you run the formatting tests before merging.
 
 Because this MCP serves as the canonical source of truth for cloud financials:
